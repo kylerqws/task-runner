@@ -8,14 +8,17 @@ import (
 	"github.com/kylerqws/task-runner/internal/transport/response"
 )
 
+// TaskHandler handles HTTP requests for task management operations.
 type TaskHandler struct {
 	Manager *service.TaskManager
 }
 
+// NewTaskHandler creates a new TaskHandler with the provided TaskManager.
 func NewTaskHandler(manager *service.TaskManager) *TaskHandler {
 	return &TaskHandler{Manager: manager}
 }
 
+// Create handles POST /tasks and creates a new task based on the given type.
 func (h *TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 	taskType := r.URL.Query().Get("type")
 	if taskType == "" {
@@ -27,6 +30,7 @@ func (h *TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 	response.RespondJSON(w, http.StatusCreated, task)
 }
 
+// Get handles GET /tasks/{id} and returns task details.
 func (h *TaskHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/tasks/")
 	task, ok := h.Manager.GetTask(id)
@@ -37,6 +41,7 @@ func (h *TaskHandler) Get(w http.ResponseWriter, r *http.Request) {
 	response.RespondJSON(w, http.StatusOK, task)
 }
 
+// Delete handles DELETE /tasks/{id} and removes a task if it's not running.
 func (h *TaskHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/tasks/")
 	deleted, locked := h.Manager.DeleteTask(id)

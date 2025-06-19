@@ -18,6 +18,8 @@ import (
 
 const serverAddr = ":8080"
 
+// main is the application entry point.
+// It initializes the task manager, HTTP server, and handles graceful shutdown.
 func main() {
 	manager := initManager()
 	server := initServer(manager)
@@ -25,6 +27,7 @@ func main() {
 	waitForShutdown(server)
 }
 
+// initManager creates a new TaskManager and registers all available task factories.
 func initManager() *service.TaskManager {
 	manager := service.NewTaskManager()
 	bootstrap.RegisterTaskFactories(manager)
@@ -32,6 +35,7 @@ func initManager() *service.TaskManager {
 	return manager
 }
 
+// initServer configures and starts the HTTP server with the task routes.
 func initServer(manager *service.TaskManager) *http.Server {
 	taskHandler := handler.NewTaskHandler(manager)
 	httpHandler := router.InitTaskRouter(taskHandler)
@@ -51,6 +55,8 @@ func initServer(manager *service.TaskManager) *http.Server {
 	return server
 }
 
+// waitForShutdown blocks until a termination signal is received
+// and then shuts down the HTTP server gracefully.
 func waitForShutdown(server *http.Server) {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)

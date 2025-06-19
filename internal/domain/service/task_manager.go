@@ -10,6 +10,8 @@ import (
 	"github.com/kylerqws/task-runner/internal/domain/task"
 )
 
+// TaskManager manages the lifecycle, execution, and tracking of tasks.
+// It holds registered task factories, task instances, and execution queues.
 type TaskManager struct {
 	mu        sync.RWMutex
 	tasks     map[string]*model.Task
@@ -17,6 +19,8 @@ type TaskManager struct {
 	queues    map[string]chan *model.Task
 }
 
+// NewTaskManager creates a new TaskManager with empty maps for tasks,
+// factories, and per-type queues.
 func NewTaskManager() *TaskManager {
 	return &TaskManager{
 		tasks:     make(map[string]*model.Task),
@@ -25,6 +29,8 @@ func NewTaskManager() *TaskManager {
 	}
 }
 
+// RegisterFactory registers a task factory for a specific task type,
+// and initializes its execution queue if not already present.
 func (m *TaskManager) RegisterFactory(taskType string, factory task.Factory) {
 	m.mu.Lock()
 	m.factories[taskType] = factory
@@ -35,6 +41,8 @@ func (m *TaskManager) RegisterFactory(taskType string, factory task.Factory) {
 	}
 }
 
+// CreateTask creates a new task of the given type and pushes it into the corresponding queue.
+// If the type is unknown, a failed task is returned.
 func (m *TaskManager) CreateTask(taskType string) *model.Task {
 	id := m.generateID()
 	t := model.NewTask(id)
@@ -54,6 +62,7 @@ func (m *TaskManager) CreateTask(taskType string) *model.Task {
 	return t
 }
 
+// GetTask returns the task by ID and a boolean indicating whether it was found.
 func (m *TaskManager) GetTask(id string) (*model.Task, bool) {
 	m.mu.RLock()
 	t, ok := m.tasks[id]
@@ -62,6 +71,8 @@ func (m *TaskManager) GetTask(id string) (*model.Task, bool) {
 	return t, ok
 }
 
+// DeleteTask removes a task by ID unless it's currently running.
+// It returns a deletion success flag and a locked status flag.
 func (m *TaskManager) DeleteTask(id string) (deleted bool, locked bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -78,6 +89,7 @@ func (m *TaskManager) DeleteTask(id string) (deleted bool, locked bool) {
 	return true, false
 }
 
+// generateID produces a random 128-bit hexadecimal task ID.
 func (m *TaskManager) generateID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {

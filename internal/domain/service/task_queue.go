@@ -9,10 +9,11 @@ import (
 )
 
 const (
-	taskQueueBufferSize        = 100
-	taskDurationUpdateInterval = 500 * time.Millisecond
+	taskQueueBufferSize        = 100                    // Maximum number of pending tasks per type
+	taskDurationUpdateInterval = 500 * time.Millisecond // Interval to update task duration
 )
 
+// queueExists checks whether a queue already exists for the given task type.
 func (m *TaskManager) queueExists(taskType string) bool {
 	m.mu.RLock()
 	_, ok := m.queues[taskType]
@@ -21,6 +22,7 @@ func (m *TaskManager) queueExists(taskType string) bool {
 	return ok
 }
 
+// createQueue initializes a queue and a background worker for the given task type.
 func (m *TaskManager) createQueue(taskType string, factory task.Factory) {
 	m.mu.Lock()
 	m.queues[taskType] = make(chan *model.Task, taskQueueBufferSize)
@@ -34,6 +36,8 @@ func (m *TaskManager) createQueue(taskType string, factory task.Factory) {
 	}()
 }
 
+// runExecutableTask updates task status, tracks execution time, runs the task,
+// and finalizes its result.
 func (m *TaskManager) runExecutableTask(t *model.Task, exec task.ExecutableTask) {
 	t.Status = model.TaskStatusRunning
 
@@ -46,6 +50,8 @@ func (m *TaskManager) runExecutableTask(t *model.Task, exec task.ExecutableTask)
 	m.finalizeTask(t, err)
 }
 
+// trackDuration updates the task's duration field every interval.
+// Returns a function to stop the tracker when the task is done.
 func (m *TaskManager) trackDuration(t *model.Task, start time.Time) func() {
 	ticker := time.NewTicker(taskDurationUpdateInterval)
 	done := make(chan struct{})
@@ -66,6 +72,7 @@ func (m *TaskManager) trackDuration(t *model.Task, start time.Time) func() {
 	return func() { close(done) }
 }
 
+// finalizeTask sets the final task status and result message based on execution outcome.
 func (m *TaskManager) finalizeTask(t *model.Task, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -80,6 +87,7 @@ func (m *TaskManager) finalizeTask(t *model.Task, err error) {
 	t.Result = "Task completed successfully"
 }
 
+// updateDuration updates the task duration field based on elapsed time.
 func (m *TaskManager) updateDuration(t *model.Task, start time.Time) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
