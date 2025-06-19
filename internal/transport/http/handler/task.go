@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/kylerqws/task-runner/internal/domain/service"
-	"github.com/kylerqws/task-runner/internal/transport/response"
+	"github.com/kylerqws/task-runner/internal/transport/http/response"
 )
 
 // TaskHandler handles HTTP requests for task management operations.
@@ -54,6 +54,5 @@ func (h *TaskHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "task not found", http.StatusNotFound)
 		return
 	}
-
-	w.WriteHeader(http.StatusNoContent)
+	response.RespondNoContent(w, http.StatusNoContent)
 }
