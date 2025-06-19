@@ -78,6 +78,19 @@ DELETE /tasks/{id}
 
 ---
 
+## Postman
+
+A collection of sample requests is available in:
+
+```
+postman/task-runner.postman_collection.json
+```
+
+You can use it to quickly test all API methods.
+It includes scripts to extract the task ID from responses and use it in subsequent requests.
+
+---
+
 ## Project Structure
 
 ```

@@ -1,1 +1,8 @@
+# IDE configs
 /.idea
+
+# Binaries
+/bin
+
+# Coverage reports
+coverage.out
