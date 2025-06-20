@@ -1,6 +1,7 @@
 package service_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/kylerqws/task-runner/internal/domain/model"
@@ -32,8 +33,10 @@ func TestCreateTask_Success(t *testing.T) {
 	manager := service.NewTaskManager()
 	manager.RegisterFactory("mock", &mockFactory{})
 
-	tsk := manager.CreateTask("mock")
-
+	tsk, err := manager.CreateTask("mock")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if tsk == nil {
 		t.Fatal("expected task to be created")
 	}
@@ -46,16 +49,19 @@ func TestCreateTask_Success(t *testing.T) {
 }
 
 // TestCreateTask_UnknownType ensures that task creation fails
-// with a 'failed' status if the task type is not registered.
+// if the task type is not registered.
 func TestCreateTask_UnknownType(t *testing.T) {
 	manager := service.NewTaskManager()
-	tsk := manager.CreateTask("unknown")
+	tsk, err := manager.CreateTask("unknown")
 
-	if tsk.Status != model.TaskStatusFailed {
-		t.Errorf("expected status 'failed', got %q", tsk.Status)
+	if err == nil {
+		t.Fatal("expected error for unknown task type")
 	}
-	if tsk.Result == "" {
-		t.Error("expected error message in task result")
+	if !errors.Is(err, service.ErrTaskUnknownType) {
+		t.Errorf("expected ErrTaskUnknownType, got %v", err)
+	}
+	if tsk != nil {
+		t.Error("expected returned task to be nil")
 	}
 }
 
@@ -64,24 +70,31 @@ func TestGetTask_Found(t *testing.T) {
 	manager := service.NewTaskManager()
 	manager.RegisterFactory("mock", &mockFactory{})
 
-	tsk := manager.CreateTask("mock")
-	found, ok := manager.GetTask(tsk.ID)
-
-	if !ok {
-		t.Fatal("expected task to be found")
+	tsk, err := manager.CreateTask("mock")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
+
+	found, err := manager.GetTask(tsk.ID)
+	if err != nil {
+		t.Fatalf("expected to find task, got error: %v", err)
+	}
+
 	if found.ID != tsk.ID {
 		t.Error("returned task ID mismatch")
 	}
 }
 
-// TestGetTask_NotFound checks that retrieving a non-existent task fails.
+// TestGetTask_NotFound checks that retrieving a non-existent task returns an error.
 func TestGetTask_NotFound(t *testing.T) {
 	manager := service.NewTaskManager()
-	_, ok := manager.GetTask("non-existent")
+	_, err := manager.GetTask("non-existent")
 
-	if ok {
-		t.Error("expected not to find nonexistent task")
+	if err == nil {
+		t.Fatal("expected error for non-existent task")
+	}
+	if !errors.Is(err, service.ErrTaskNotFound) {
+		t.Errorf("expected ErrTaskNotFound, got %v", err)
 	}
 }
 
@@ -90,18 +103,21 @@ func TestDeleteTask(t *testing.T) {
 	manager := service.NewTaskManager()
 	manager.RegisterFactory("mock", &mockFactory{})
 
-	tsk := manager.CreateTask("mock")
-	tsk.Status = model.TaskStatusDone
-	deleted, locked := manager.DeleteTask(tsk.ID)
+	tsk, err := manager.CreateTask("mock")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
-	if !deleted {
-		t.Error("expected task to be deleted")
+	tsk.Status = model.TaskStatusDone
+
+	err = manager.DeleteTask(tsk.ID)
+	if err != nil {
+		t.Errorf("expected task to be deleted, got error: %v", err)
 	}
-	if locked {
-		t.Error("did not expect task to be locked")
-	}
-	if _, ok := manager.GetTask(tsk.ID); ok {
-		t.Error("expected task to be gone")
+
+	_, err = manager.GetTask(tsk.ID)
+	if !errors.Is(err, service.ErrTaskNotFound) {
+		t.Error("expected task to be deleted from manager")
 	}
 }
 
@@ -110,14 +126,18 @@ func TestDeleteTask_Running(t *testing.T) {
 	manager := service.NewTaskManager()
 	manager.RegisterFactory("mock", &mockFactory{})
 
-	tsk := manager.CreateTask("mock")
-	tsk.Status = model.TaskStatusRunning
-	deleted, locked := manager.DeleteTask(tsk.ID)
-
-	if deleted {
-		t.Error("should not delete a running task")
+	tsk, err := manager.CreateTask("mock")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if !locked {
-		t.Error("expected task to be locked")
+
+	tsk.Status = model.TaskStatusRunning
+
+	err = manager.DeleteTask(tsk.ID)
+	if err == nil {
+		t.Fatal("expected error when deleting running task")
+	}
+	if !errors.Is(err, service.ErrTaskIsProgress) {
+		t.Errorf("expected ErrTaskIsProgress, got %v", err)
 	}
 }

@@ -10,6 +10,7 @@ A simple in-memory HTTP service for running long tasks.
 - Check task status, result, and duration
 - Delete tasks (except if running)
 - One task runs at a time for each task type
+- Up to **100** pending tasks per type (queue limit)
 - No database, queues, or external services
 
 ---

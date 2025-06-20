@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/kylerqws/task-runner/internal/transport/http/handler"
+	"github.com/kylerqws/task-runner/internal/transport/http/response"
 )
 
 // InitTaskRouter initializes HTTP routing for task-related endpoints.
@@ -18,7 +19,7 @@ func InitTaskRouter(taskHandler *handler.TaskHandler) http.Handler {
 			return
 		}
 
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		http.Error(w, response.ErrMethodNotAllowed, http.StatusMethodNotAllowed)
 	})
 
 	// GET /tasks/{id}, DELETE /tasks/{id}
@@ -33,7 +34,7 @@ func InitTaskRouter(taskHandler *handler.TaskHandler) http.Handler {
 			return
 		}
 
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		http.Error(w, response.ErrMethodNotAllowed, http.StatusMethodNotAllowed)
 	})
 
 	return mux

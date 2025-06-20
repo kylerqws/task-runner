@@ -27,5 +27,6 @@ func (t *DefaultTask) Run() error {
 	if t.rng.Intn(100) >= 60 {
 		return fmt.Errorf("simulated task failure")
 	}
+
 	return nil
 }

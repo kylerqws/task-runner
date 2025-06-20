@@ -15,6 +15,7 @@ const (
 // Task holds metadata about an asynchronous task's lifecycle and result.
 type Task struct {
 	ID        string     `json:"id"`                 // Unique task identifier
+	Type      string     `json:"type"`               // Type of the task (e.g. "default", etc.)
 	Status    TaskStatus `json:"status"`             // Current task status
 	CreatedAt time.Time  `json:"created_at"`         // Task creation timestamp
 	Duration  string     `json:"duration,omitempty"` // Total execution time (if available)
@@ -22,6 +23,6 @@ type Task struct {
 }
 
 // NewTask creates and returns a new Task with default status and creation time.
-func NewTask(id string) *Task {
-	return &Task{ID: id, Status: TaskStatusPending, CreatedAt: time.Now()}
+func NewTask(id, taskType string) *Task {
+	return &Task{ID: id, Type: taskType, Status: TaskStatusPending, CreatedAt: time.Now()}
 }

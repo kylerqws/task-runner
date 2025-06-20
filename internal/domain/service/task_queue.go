@@ -29,16 +29,18 @@ func (m *TaskManager) createQueue(taskType string, factory task.Factory) {
 	m.mu.Unlock()
 
 	go func() {
-		for t := range m.queues[taskType] {
-			exec := factory.New(t)
-			m.runExecutableTask(t, exec)
+		m.mu.RLock()
+		list := m.queues[taskType]
+		m.mu.RUnlock()
+
+		for t := range list {
+			m.runExecutableTask(taskType, t, factory.New(t))
 		}
 	}()
 }
 
-// runExecutableTask updates task status, tracks execution time, runs the task,
-// and finalizes its result.
-func (m *TaskManager) runExecutableTask(t *model.Task, exec task.ExecutableTask) {
+// runExecutableTask executes the given task, tracks its duration, and updates its final state.
+func (m *TaskManager) runExecutableTask(taskType string, t *model.Task, exec task.ExecutableTask) {
 	t.Status = model.TaskStatusRunning
 
 	start := time.Now()
@@ -48,10 +50,14 @@ func (m *TaskManager) runExecutableTask(t *model.Task, exec task.ExecutableTask)
 	stop()
 
 	m.finalizeTask(t, err)
+
+	m.mu.Lock()
+	m.active[taskType]--
+	m.mu.Unlock()
 }
 
-// trackDuration updates the task's duration field every interval.
-// Returns a function to stop the tracker when the task is done.
+// trackDuration periodically updates the task duration while it is running.
+// Returns a stop function to be called after execution completes.
 func (m *TaskManager) trackDuration(t *model.Task, start time.Time) func() {
 	ticker := time.NewTicker(taskDurationUpdateInterval)
 	done := make(chan struct{})
@@ -72,7 +78,7 @@ func (m *TaskManager) trackDuration(t *model.Task, start time.Time) func() {
 	return func() { close(done) }
 }
 
-// finalizeTask sets the final task status and result message based on execution outcome.
+// finalizeTask sets the task status and result based on execution outcome.
 func (m *TaskManager) finalizeTask(t *model.Task, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
