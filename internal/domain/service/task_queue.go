@@ -32,6 +32,10 @@ func (m *TaskManager) workerLoop(taskType string) {
 
 		exec := factory.New(t)
 		m.runExecutableTask(t, exec)
+
+		m.mu.Lock()
+		m.active[t.Type]--
+		m.mu.Unlock()
 	}
 }
 
@@ -46,10 +50,6 @@ func (m *TaskManager) runExecutableTask(t *model.Task, exec task.ExecutableTask)
 	stop()
 
 	m.finalizeTask(t, err)
-
-	m.mu.Lock()
-	m.active[t.Type]--
-	m.mu.Unlock()
 }
 
 // trackDuration updates task duration while it's running.
