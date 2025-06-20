@@ -68,7 +68,7 @@ func (h *TaskHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, service.ErrTaskNotFound):
 			http.Error(w, err.Error(), http.StatusNotFound)
-		case errors.Is(err, service.ErrTaskIsProgress):
+		case errors.Is(err, service.ErrTaskInProgress):
 			http.Error(w, err.Error(), http.StatusConflict)
 		default:
 			http.Error(w, response.ErrInternalServer, http.StatusInternalServerError)

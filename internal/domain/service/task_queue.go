@@ -9,38 +9,34 @@ import (
 )
 
 const (
-	taskQueueBufferSize        = 100                    // Maximum number of pending tasks per type
-	taskDurationUpdateInterval = 500 * time.Millisecond // Interval to update task duration
+	taskQueueBufferSize        = 100                    // Max number of tasks in the queue
+	taskDurationUpdateInterval = 500 * time.Millisecond // Duration update interval
 )
 
-// queueExists checks whether a queue already exists for the given task type.
-func (m *TaskManager) queueExists(taskType string) bool {
-	m.mu.RLock()
-	_, ok := m.queues[taskType]
-	m.mu.RUnlock()
+// workerLoop processes tasks from the queue in order for a given type.
+func (m *TaskManager) workerLoop(taskType string) {
+	for {
+		m.mu.Lock()
+		queue := m.queues[taskType]
+		factory := m.factories[taskType]
 
-	return ok
-}
-
-// createQueue initializes a queue and a background worker for the given task type.
-func (m *TaskManager) createQueue(taskType string, factory task.Factory) {
-	m.mu.Lock()
-	m.queues[taskType] = make(chan *model.Task, taskQueueBufferSize)
-	m.mu.Unlock()
-
-	go func() {
-		m.mu.RLock()
-		list := m.queues[taskType]
-		m.mu.RUnlock()
-
-		for t := range list {
-			m.runExecutableTask(taskType, t, factory.New(t))
+		if len(queue) == 0 {
+			m.mu.Unlock()
+			time.Sleep(100 * time.Millisecond)
+			continue
 		}
-	}()
+
+		t := queue[0]
+		m.queues[taskType] = queue[1:]
+		m.mu.Unlock()
+
+		exec := factory.New(t)
+		m.runExecutableTask(t, exec)
+	}
 }
 
-// runExecutableTask executes the given task, tracks its duration, and updates its final state.
-func (m *TaskManager) runExecutableTask(taskType string, t *model.Task, exec task.ExecutableTask) {
+// runExecutableTask runs the task and finalizes its result.
+func (m *TaskManager) runExecutableTask(t *model.Task, exec task.ExecutableTask) {
 	t.Status = model.TaskStatusRunning
 
 	start := time.Now()
@@ -52,12 +48,11 @@ func (m *TaskManager) runExecutableTask(taskType string, t *model.Task, exec tas
 	m.finalizeTask(t, err)
 
 	m.mu.Lock()
-	m.active[taskType]--
+	m.active[t.Type]--
 	m.mu.Unlock()
 }
 
-// trackDuration periodically updates the task duration while it is running.
-// Returns a stop function to be called after execution completes.
+// trackDuration updates task duration while it's running.
 func (m *TaskManager) trackDuration(t *model.Task, start time.Time) func() {
 	ticker := time.NewTicker(taskDurationUpdateInterval)
 	done := make(chan struct{})
@@ -78,7 +73,7 @@ func (m *TaskManager) trackDuration(t *model.Task, start time.Time) func() {
 	return func() { close(done) }
 }
 
-// finalizeTask sets the task status and result based on execution outcome.
+// finalizeTask sets task status and result after execution.
 func (m *TaskManager) finalizeTask(t *model.Task, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -93,10 +88,31 @@ func (m *TaskManager) finalizeTask(t *model.Task, err error) {
 	t.Result = "Task completed successfully"
 }
 
-// updateDuration updates the task duration field based on elapsed time.
+// updateDuration sets how long the task has been running.
 func (m *TaskManager) updateDuration(t *model.Task, start time.Time) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	t.Duration = time.Since(start).Truncate(time.Second).String()
+}
+
+// enqueueTask adds a task to the queue and updates the counter.
+// WARNING: Must be called with m.mu.Lock held.
+func (m *TaskManager) enqueueTask(t *model.Task) {
+	m.queues[t.Type] = append(m.queues[t.Type], t)
+	m.active[t.Type]++
+}
+
+// removeFromQueue deletes a task from the queue and updates the counter.
+// WARNING: Must be called with m.mu.Lock held.
+func (m *TaskManager) removeFromQueue(t *model.Task) {
+	q := m.queues[t.Type]
+
+	for i := range q {
+		if q[i].ID == t.ID {
+			m.queues[t.Type] = append(q[:i], q[i+1:]...)
+			m.active[t.Type]--
+			break
+		}
+	}
 }

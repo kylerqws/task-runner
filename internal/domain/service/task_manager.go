@@ -10,68 +10,62 @@ import (
 	"github.com/kylerqws/task-runner/internal/domain/task"
 )
 
-// TaskManager coordinates the lifecycle of tasks: creation, execution, lookup, and deletion.
-// Each task type has its own queue and active counter.
+// TaskManager manages task creation, execution, lookup, and deletion.
 type TaskManager struct {
-	mu        sync.RWMutex                // Synchronizes access to all internal maps
-	tasks     map[string]*model.Task      // Stores all tasks by their unique ID
-	factories map[string]task.Factory     // Registered factories for each task type
-	queues    map[string]chan *model.Task // Execution queues per task type
-	active    map[string]int              // Number of active tasks per task type
+	mu        sync.RWMutex
+	tasks     map[string]*model.Task   // All tasks by ID
+	factories map[string]task.Factory  // Task type -> factory
+	queues    map[string][]*model.Task // Task type -> task queue
+	active    map[string]int           // Task type -> active count
 }
 
-// NewTaskManager initializes and returns a new TaskManager instance.
+// NewTaskManager returns a new instance with empty internal maps.
 func NewTaskManager() *TaskManager {
 	return &TaskManager{
 		tasks:     make(map[string]*model.Task),
 		factories: make(map[string]task.Factory),
-		queues:    make(map[string]chan *model.Task),
+		queues:    make(map[string][]*model.Task),
 		active:    make(map[string]int),
 	}
 }
 
-// RegisterFactory binds a task type to a factory,
-// and creates a queue for the type if not already present.
+// RegisterFactory sets up a task type with its factory and starts the worker.
 func (m *TaskManager) RegisterFactory(taskType string, factory task.Factory) {
 	m.mu.Lock()
-	m.factories[taskType] = factory
-	m.mu.Unlock()
+	defer m.mu.Unlock()
 
-	if !m.queueExists(taskType) {
-		m.createQueue(taskType, factory)
+	if _, ok := m.factories[taskType]; !ok {
+		m.factories[taskType] = factory
+		m.queues[taskType] = []*model.Task{}
+		go m.workerLoop(taskType)
 	}
 }
 
-// CreateTask creates and queues a new task of the given type.
-// Returns an error if the type is unknown or the active queue is full.
+// CreateTask adds a new task to the queue if the type is known and not full.
 func (m *TaskManager) CreateTask(taskType string) (*model.Task, error) {
 	if taskType == "" {
 		return nil, fmt.Errorf("cannot create task: %w", ErrTaskUnknownType)
 	}
 
 	m.mu.RLock()
-	_, ok := m.factories[taskType]
+	_, typeExists := m.factories[taskType]
+	activeCount := m.active[taskType]
 	m.mu.RUnlock()
 
-	if !ok {
+	if !typeExists {
 		return nil, fmt.Errorf("cannot create task with type %q: %w", taskType, ErrTaskUnknownType)
 	}
-
-	m.mu.RLock()
-	active, _ := m.active[taskType]
-	m.mu.RUnlock()
-
-	if active >= taskQueueBufferSize {
+	if activeCount >= taskQueueBufferSize {
 		return nil, fmt.Errorf("cannot create task with type %q: %w", taskType, ErrTaskQueueLimitReached)
 	}
 
 	id := m.generateID()
 
 	m.mu.RLock()
-	_, ok = m.tasks[id]
+	_, taskExists := m.tasks[id]
 	m.mu.RUnlock()
 
-	if ok {
+	if taskExists {
 		return nil, fmt.Errorf("cannot create task with ID %q: %w", id, ErrTaskAlreadyExists)
 	}
 
@@ -79,55 +73,46 @@ func (m *TaskManager) CreateTask(taskType string) (*model.Task, error) {
 
 	m.mu.Lock()
 	m.tasks[t.ID] = t
-	m.queues[taskType] <- t
-	m.active[taskType]++
+	m.enqueueTask(t)
 	m.mu.Unlock()
 
 	return t, nil
 }
 
-// GetTask returns a task by its ID from the internal registry.
-// Returns an error if the task does not exist or was not previously created.
+// GetTask returns a task by ID or an error if not found.
 func (m *TaskManager) GetTask(id string) (*model.Task, error) {
 	m.mu.RLock()
-	t, ok := m.tasks[id]
+	t, taskExists := m.tasks[id]
 	m.mu.RUnlock()
 
-	if !ok {
+	if !taskExists {
 		return nil, fmt.Errorf("cannot find task with ID %q: %w", id, ErrTaskNotFound)
 	}
 	return t, nil
 }
 
-// DeleteTask removes a task by ID if it is not currently running.
-// Returns an error if the task does not exist or is in progress.
+// DeleteTask removes a task if it's not running.
 func (m *TaskManager) DeleteTask(id string) error {
 	m.mu.RLock()
-	t, ok := m.tasks[id]
+	t, taskExists := m.tasks[id]
 	m.mu.RUnlock()
 
-	if !ok {
+	if !taskExists {
 		return fmt.Errorf("cannot delete task with ID %q: %w", id, ErrTaskNotFound)
 	}
-
 	if t.Status == model.TaskStatusRunning {
-		return fmt.Errorf("cannot delete task with ID %q: %w", id, ErrTaskIsProgress)
-	}
-
-	if t.Status == model.TaskStatusPending { // != TaskStatusDone and TaskStatusFailed
-		m.mu.Lock()
-		m.active[t.Type]--
-		m.mu.Unlock()
+		return fmt.Errorf("cannot delete task with ID %q: %w", id, ErrTaskInProgress)
 	}
 
 	m.mu.Lock()
 	delete(m.tasks, id)
+	m.removeFromQueue(t)
 	m.mu.Unlock()
 
 	return nil
 }
 
-// generateID creates a secure 128-bit hexadecimal task ID.
+// generateID returns a secure random 128-bit hex string.
 func (m *TaskManager) generateID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
